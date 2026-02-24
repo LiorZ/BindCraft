@@ -36,6 +36,12 @@ def binder_hallucination(design_name, starting_pdb, chain, target_hotspot_residu
     af_model.prep_inputs(pdb_filename=starting_pdb, chain=chain, binder_len=length, hotspot=target_hotspot_residues, seed=seed, rm_aa=advanced_settings["omit_AAs"],
                         rm_target_seq=advanced_settings["rm_template_seq_design"], rm_target_sc=advanced_settings["rm_template_sc_design"])
 
+    # Force Cys at binder position 1 for split intein cyclization
+    if advanced_settings.get("force_cys_position1", False):
+        cys_idx = residue_constants.restypes.index('C')
+        # Override rm_aa penalty for Cys at binder position 1 with strong positive bias
+        af_model.opt["bias"][-length, cys_idx] = 10.0
+
     ### Update weights based on specified settings
     af_model.opt["weights"].update({"pae":advanced_settings["weights_pae_intra"],
                                     "plddt":advanced_settings["weights_plddt"],
@@ -352,6 +358,11 @@ def mpnn_gen_sequence(trajectory_pdb, binder_chain, trajectory_interface_residue
         print("Fixing interface residues: "+trajectory_interface_residues)
     else:
         fixed_positions = 'A'
+
+    # Fix binder position 1 as Cys for split intein cyclization
+    if advanced_settings.get("force_cys_position1", False):
+        fixed_positions += ',' + binder_chain + '1'
+        print("Fixing position 1 on chain " + binder_chain + " as Cys for split intein cyclization")
 
     # prepare inputs for MPNN
     mpnn_model.prep_inputs(pdb_filename=trajectory_pdb, chain=design_chains, fix_pos=fixed_positions, rm_aa=advanced_settings["omit_AAs"])
