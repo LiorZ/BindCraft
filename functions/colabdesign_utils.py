@@ -40,7 +40,7 @@ def binder_hallucination(design_name, starting_pdb, chain, target_hotspot_residu
     if advanced_settings.get("force_cys_position1", False):
         cys_idx = residue_constants.restypes.index('C')
         # Override rm_aa penalty for Cys at binder position 1 with strong positive bias
-        af_model._inputs["bias"] = af_model._inputs["bias"].at[-length, cys_idx].set(10.0)
+        af_model._inputs["bias"][-length, cys_idx] = 10.0
 
     ### Update weights based on specified settings
     af_model.opt["weights"].update({"pae":advanced_settings["weights_pae_intra"],
