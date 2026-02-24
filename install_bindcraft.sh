@@ -1,13 +1,11 @@
 #!/bin/bash
-################## BindCraft installation script
-################## specify conda/mamba folder, and installation folder for git repositories, and whether to use mamba or $pkg_manager
-# Default value for pkg_manager
-pkg_manager='conda'
+################## BindCraft installation script (uv)
+################## specify CUDA version for GPU support
 cuda=''
 
 # Define the short and long options
-OPTIONS=p:c:
-LONGOPTIONS=pkg_manager:,cuda:
+OPTIONS=c:
+LONGOPTIONS=cuda:
 
 # Parse the command-line options
 PARSED=$(getopt --options=$OPTIONS --longoptions=$LONGOPTIONS --name "$0" -- "$@")
@@ -16,10 +14,6 @@ eval set -- "$PARSED"
 # Process the command-line options
 while true; do
   case "$1" in
-    -p|--pkg_manager)
-      pkg_manager="$2"
-      shift 2
-      ;;
     -c|--cuda)
       cuda="$2"
       shift 2
@@ -35,71 +29,85 @@ while true; do
   esac
 done
 
-# Example usage of the parsed variables
-echo -e "Package manager: $pkg_manager"
-echo -e "CUDA: $cuda"
+echo -e "CUDA: ${cuda:-'not specified (CPU only)'}"
 
 ############################################################################################################
 ############################################################################################################
 ################## initialisation
 SECONDS=0
 
-# set paths needed for installation and check for conda installation
+# set paths and check for uv installation
 install_dir=$(pwd)
-CONDA_BASE=$(conda info --base 2>/dev/null) || { echo -e "Error: conda is not installed or cannot be initialised."; exit 1; }
-echo -e "Conda is installed at: $CONDA_BASE"
+command -v uv >/dev/null 2>&1 || { echo -e "Error: uv is not installed. Install it with: curl -LsSf https://astral.sh/uv/install.sh | sh"; exit 1; }
+echo -e "uv is installed: $(uv --version)"
 
-### BindCraft install begin, create base environment
+# check for ffmpeg (system dependency required for animations)
+command -v ffmpeg >/dev/null 2>&1 || echo -e "Warning: ffmpeg is not installed. Install it via your system package manager (e.g., apt install ffmpeg, brew install ffmpeg)."
+
+### BindCraft install begin, create virtual environment
 echo -e "Installing BindCraft environment\n"
-$pkg_manager create --name BindCraft python=3.10 -y || { echo -e "Error: Failed to create BindCraft conda environment"; exit 1; }
-conda env list | grep -w 'BindCraft' >/dev/null 2>&1 || { echo -e "Error: Conda environment 'BindCraft' does not exist after creation."; exit 1; }
+uv venv --python 3.10 "${install_dir}/.venv" || { echo -e "Error: Failed to create BindCraft virtual environment"; exit 1; }
 
 # Load newly created BindCraft environment
 echo -e "Loading BindCraft environment\n"
-source ${CONDA_BASE}/bin/activate ${CONDA_BASE}/envs/BindCraft || { echo -e "Error: Failed to activate the BindCraft environment."; exit 1; }
-[ "$CONDA_DEFAULT_ENV" = "BindCraft" ] || { echo -e "Error: The BindCraft environment is not active."; exit 1; }
-echo -e "BindCraft environment activated at ${CONDA_BASE}/envs/BindCraft"
+source "${install_dir}/.venv/bin/activate" || { echo -e "Error: Failed to activate the BindCraft environment."; exit 1; }
+echo -e "BindCraft environment activated at ${install_dir}/.venv"
 
-# install required conda packages
-echo -e "Instaling conda requirements\n"
+# install required Python packages
+echo -e "Installing Python dependencies\n"
 if [ -n "$cuda" ]; then
-  CONDA_OVERRIDE_CUDA="$cuda" $pkg_manager install \
-    pip pandas matplotlib 'numpy<2.0.0' biopython scipy pdbfixer seaborn libgfortran5 tqdm jupyter ffmpeg pyrosetta fsspec py3dmol \
+  # determine CUDA major version for JAX extras
+  cuda_major=$(echo "$cuda" | cut -d. -f1)
+  if [ "$cuda_major" = "12" ]; then
+    jax_cuda="jax[cuda12]>=0.4,<=0.6.0"
+  elif [ "$cuda_major" = "11" ]; then
+    jax_cuda="jax[cuda11]>=0.4,<=0.6.0"
+  else
+    echo -e "Warning: Unrecognized CUDA major version '${cuda_major}', defaulting to cuda12"
+    jax_cuda="jax[cuda12]>=0.4,<=0.6.0"
+  fi
+
+  uv pip install \
+    pandas matplotlib 'numpy<2.0.0' biopython scipy pdbfixer seaborn tqdm jupyter fsspec py3dmol \
     chex dm-haiku 'flax<0.10.0' dm-tree joblib ml-collections immutabledict optax \
-    'jax>=0.4,<=0.6.0' 'jaxlib>=0.4,<=0.6.0=*cuda*' cuda-nvcc cudnn \
-    -c conda-forge -c nvidia --channel https://conda.graylab.jhu.edu -y \
-  || { echo -e "Error: Failed to install conda packages."; exit 1; }
+    "${jax_cuda}" \
+  || { echo -e "Error: Failed to install Python packages."; exit 1; }
 else
-  $pkg_manager install \
-    pip pandas matplotlib 'numpy<2.0.0' biopython scipy pdbfixer seaborn libgfortran5 tqdm jupyter ffmpeg pyrosetta fsspec py3dmol \
+  uv pip install \
+    pandas matplotlib 'numpy<2.0.0' biopython scipy pdbfixer seaborn tqdm jupyter fsspec py3dmol \
     chex dm-haiku 'flax<0.10.0' dm-tree joblib ml-collections immutabledict optax \
-    'jax>=0.4,<=0.6.0' 'jaxlib>=0.4,<=0.6.0' \
-    -c conda-forge -c nvidia --channel https://conda.graylab.jhu.edu -y \
-  || { echo -e "Error: Failed to install conda packages."; exit 1; }
+    'jax>=0.4,<=0.6.0' \
+  || { echo -e "Error: Failed to install Python packages."; exit 1; }
 fi
 
+# install PyRosetta
+echo -e "Installing PyRosetta\n"
+uv pip install pyrosetta-installer || { echo -e "Error: Failed to install pyrosetta-installer"; exit 1; }
+python -c 'import pyrosetta_installer; pyrosetta_installer.install_pyrosetta()' || { echo -e "Error: Failed to install PyRosetta. See https://www.pyrosetta.org/ for licensing."; exit 1; }
+python -c "import pyrosetta" >/dev/null 2>&1 || { echo -e "Error: pyrosetta module not found after installation"; exit 1; }
+
+# install ColabDesign
+echo -e "Installing ColabDesign\n"
+uv pip install git+https://github.com/sokrypton/ColabDesign.git --no-deps || { echo -e "Error: Failed to install ColabDesign"; exit 1; }
+python -c "import colabdesign" >/dev/null 2>&1 || { echo -e "Error: colabdesign module not found after installation"; exit 1; }
+
 # make sure all required packages were installed
-required_packages=(pip pandas libgfortran5 matplotlib numpy biopython scipy pdbfixer seaborn tqdm jupyter ffmpeg pyrosetta fsspec py3dmol chex dm-haiku dm-tree joblib ml-collections immutabledict optax jaxlib jax cuda-nvcc cudnn)
+required_modules=(pandas matplotlib numpy Bio scipy pdbfixer seaborn tqdm fsspec py3Dmol chex haiku flax tree joblib ml_collections immutabledict optax jaxlib jax pyrosetta colabdesign)
 missing_packages=()
 
-# Check each package
-for pkg in "${required_packages[@]}"; do
-    conda list "$pkg" | grep -w "$pkg" >/dev/null 2>&1 || missing_packages+=("$pkg")
+# Check each module can be imported
+for mod in "${required_modules[@]}"; do
+    python -c "import $mod" >/dev/null 2>&1 || missing_packages+=("$mod")
 done
 
 # If any packages are missing, output error and exit
 if [ ${#missing_packages[@]} -ne 0 ]; then
-    echo -e "Error: The following packages are missing from the environment:"
+    echo -e "Error: The following modules could not be imported:"
     for pkg in "${missing_packages[@]}"; do
         echo -e " - $pkg"
     done
     exit 1
 fi
-
-# install ColabDesign
-echo -e "Installing ColabDesign\n"
-pip3 install git+https://github.com/sokrypton/ColabDesign.git --no-deps || { echo -e "Error: Failed to install ColabDesign"; exit 1; }
-python -c "import colabdesign" >/dev/null 2>&1 || { echo -e "Error: colabdesign module not found after installation"; exit 1; }
 
 # AlphaFold2 weights
 echo -e "Downloading AlphaFold2 model weights \n"
@@ -123,19 +131,19 @@ chmod +x "${install_dir}/functions/dssp" || { echo -e "Error: Failed to chmod ds
 chmod +x "${install_dir}/functions/DAlphaBall.gcc" || { echo -e "Error: Failed to chmod DAlphaBall.gcc"; exit 1; }
 
 # finish
-conda deactivate
+deactivate
 echo -e "BindCraft environment set up\n"
 
 ############################################################################################################
 ############################################################################################################
 ################## cleanup
-echo -e "Cleaning up ${pkg_manager} temporary files to save space\n"
-$pkg_manager clean -a -y
-echo -e "$pkg_manager cleaned up\n"
+echo -e "Cleaning up uv cache to save space\n"
+uv cache clean
+echo -e "uv cache cleaned up\n"
 
 ################## finish script
-t=$SECONDS 
+t=$SECONDS
 echo -e "Successfully finished BindCraft installation!\n"
-echo -e "Activate environment using command: \"$pkg_manager activate BindCraft\""
+echo -e "Activate environment using command: \"source ${install_dir}/.venv/bin/activate\""
 echo -e "\n"
 echo -e "Installation took $(($t / 3600)) hours, $((($t / 60) % 60)) minutes and $(($t % 60)) seconds."

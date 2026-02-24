@@ -9,16 +9,11 @@
 #SBATCH --time 72:00:00
 #SBATCH --output=bindcraft_%A.log
 
-# Initialise environment and modules
-CONDA_BASE=$(conda info --base)
-source ${CONDA_BASE}/bin/activate ${CONDA_BASE}/envs/BindCraft
-export LD_LIBRARY_PATH=${CONDA_BASE}/lib
-
-# alternatively you can source the environment directly
-#source /path/to/mambaforge/bin/activate /path/to/mambaforge/envs/BindCraft
-
 # Get the directory where the bindcraft script is located
 SCRIPT_DIR=$(dirname "$0")
+
+# Initialise environment
+source "${SCRIPT_DIR}/.venv/bin/activate"
 
 # Parsing command line options
 SETTINGS=""

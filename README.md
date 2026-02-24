@@ -12,11 +12,15 @@ First you need to clone this repository. Replace **[install_folder]** with the p
 
 `git clone https://github.com/martinpacesa/BindCraft [install_folder]`
 
-The navigate into your install folder using *cd* and run the installation code. BindCraft requires a CUDA-compatible Nvidia graphics card to run. In the *cuda* setting, please specify the CUDA version compatible with your graphics card, for example '11.8'. If unsure, leave blank but it's possible that the installation might select the wrong version, which will lead to errors. In *pkg_manager* specify whether you are using 'mamba' or 'conda', if left blank it will use 'conda' by default. 
+Then navigate into your install folder using *cd* and run the installation code. BindCraft requires a CUDA-compatible Nvidia graphics card to run. In the *cuda* setting, please specify the CUDA version compatible with your graphics card, for example '11.8'. If unsure, leave blank but it's possible that the installation might select the wrong version, which will lead to errors.
+
+**Prerequisites:**
+- [uv](https://docs.astral.sh/uv/) - Install with: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- `ffmpeg` - Install via your system package manager (e.g., `apt install ffmpeg`, `brew install ffmpeg`)
 
 Note: This install script will install PyRosetta, which requires a license for commercial purposes. The code requires about 2 Mb of storage space, while the AlphaFold2 weights take up about 5.3 Gb.
 
-`bash install_bindcraft.sh --cuda '12.4' --pkg_manager 'conda'`
+`bash install_bindcraft.sh --cuda '12.4'`
 
 ## Google Colab
 <a href="https://colab.research.google.com/github/martinpacesa/BindCraft/blob/main/notebooks/BindCraft.ipynb">
@@ -47,10 +51,10 @@ Then run the binder design script:
 
 The *settings* flag should point to your target .json which you set above. The *filters* flag points to the json where the design filters are specified (default is ./filters/default_filters.json). The *advanced* flag points to your advanced settings (default is ./advanced_settings/default_4stage_multimer.json). If you leave out the filters and advanced settings flags it will automatically point to the defaults.
 
-Alternatively, if your machine does not support SLURM, you can run the code directly by activating the environment in conda and running the python code:
+Alternatively, if your machine does not support SLURM, you can run the code directly by activating the virtual environment and running the python code:
 
 ```
-conda activate BindCraft
+source /path/to/bindcraft/folder/.venv/bin/activate
 cd /path/to/bindcraft/folder/
 python -u ./bindcraft.py --settings './settings_target/PDL1.json' --filters './settings_filters/default_filters.json' --advanced './settings_advanced/default_4stage_multimer.json'
 ```
